@@ -22,6 +22,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include "CAN_AutoLeveller.h"
+#include"FDCAN.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -57,6 +59,7 @@ TIM_HandleTypeDef htim17;
 UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
+SensorTypeDef S;
 
 /* USER CODE END PV */
 
@@ -88,12 +91,47 @@ uint8_t uart_halfSent = 0;
 uint8_t uart_secondhalfSent = 0;
 uint8_t dataOut = 0;
 
+uint32_t dualValue =0;
+uint16_t autoLeveller=0;
+uint16_t coilerSensor=0;
+uint8_t adcRunning = 0;
+
 uint16_t autoLevellerArr[180];
 uint16_t coilerSensorArr[180];
 uint32_t DAC_OutArray[180];
+uint16_t BR_MotorRPMArr[180];
 
 char LogBuffer[1000];
 uint16_t bufferIdx;
+uint16_t sampleIndex = 0;
+
+char uartMsg[128];
+int len;
+
+
+//Draft Calculation
+float Draft_Change=0;
+float Updated_Draft=0;
+#define Sliver6_Value 707
+#define Sliver5_Value 860
+#define Sliver4_Value 1052
+#define Ideal_Draft 5
+
+//RPM Calculation
+float req_draft_SR_to_FR=0;
+float surfaceSpeed_SR=0;
+float surfaceSpeed_BR=0;
+float BR_RPM=0;
+uint16_t BR_MotorRPM=0;
+#define BR_TO_SR_BREAK_DRAFT 1.5f
+#define BR_DIA_MM 30
+uint8_t i=0;
+
+volatile GPIO_PinState pinState;
+volatile uint8_t toggle_state = 0;
+
+
+
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
@@ -102,19 +140,153 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		HAL_GPIO_TogglePin(GPIOC,LED3_Pin);
 	}*/
 	if (htim->Instance==TIM6){
-		HAL_GPIO_TogglePin(GPIOC,LED3_Pin);
+		//HAL_GPIO_TogglePin(GPIOC,LED3_Pin);
 
 	}
 }
-
-void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef *hadc){
-	halfComplete+=1;
+uint8_t Log_DataToBufferReadable(uint16_t bufferLocation,uint16_t data1,uint16_t data2){
+	uint8_t size1 = 0,size2=0,size3=0;
+	size1 = itoaFast(data1,LogBuffer+bufferLocation,10);
+	LogBuffer[bufferLocation+size1] = 0x2C;
+	size2 = itoaFast(data2,LogBuffer+bufferLocation+size1+1,10);
+	LogBuffer[bufferLocation+size1+size2 + 1] = 0x0A;
+	LogBuffer[bufferLocation+size1+size2 + 2] = 0x0D;
+	return size1+size2 + 3;
 }
 
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
-	fullComplete+=1;
-	HAL_GPIO_TogglePin(GPIOC,LED1_Pin);
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    if (GPIO_Pin == GPIO_PIN_1)
+    {
+        GPIO_PinState state = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_1);
+
+        if (state == GPIO_PIN_SET && adcRunning == 0)
+        {
+
+            adcRunning = 1;
+
+            HAL_GPIO_WritePin(GPIOC, LED2_Pin, GPIO_PIN_RESET);
+
+
+            HAL_ADC_Start(&hadc2);
+            HAL_ADCEx_MultiModeStart_DMA(&hadc1, (uint32_t*)adcBuffer, 180);
+
+
+            HAL_DAC_Start_DMA(&hdac1, DAC_CHANNEL_1,
+                              (uint32_t*)DAC_OutArray,
+                              180, DAC_ALIGN_12B_R);
+        }
+        else if (state == GPIO_PIN_RESET && adcRunning == 1)
+        {
+
+            adcRunning = 0;
+
+            HAL_ADCEx_MultiModeStop_DMA(&hadc1);
+            HAL_ADC_Stop(&hadc2);
+            HAL_DAC_Stop_DMA(&hdac1, DAC_CHANNEL_1);
+
+            HAL_GPIO_WritePin(GPIOC, LED2_Pin, GPIO_PIN_SET);
+        }
+    }
 }
+
+
+
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
+{
+    if (hadc->Instance == ADC1 && adcRunning)
+    {
+
+        dualValue = HAL_ADCEx_MultiModeGetValue(hadc);
+
+        autoLeveller = (uint16_t)(dualValue >> 16);
+        coilerSensor= (uint16_t)(dualValue);
+        S.coilerSensor =coilerSensor;
+	    S.scanningSensor= autoLeveller;
+	    StoreAutoLevellerValues();
+        DraftCalculation();
+        BrRPMCalculation();
+	    S.Updated_Draft=Updated_Draft;
+	    S.BR_MotorRPM=BR_MotorRPM;
+//	    GPIO_PinState pinState = HAL_GPIO_ReadPin(GPIOB, EXTRA7_Pin);
+//	    if (pinState == GPIO_PIN_SET){
+//	    	S.Toggle_Switch=1;
+//	    }
+//	    else{
+//	    	S.Toggle_Switch=0;
+//	    }
+        FDCAN_SendSensorvalues_ToAL();
+
+
+
+        if (sampleIndex < 180) {
+                    autoLevellerArr[sampleIndex] = autoLeveller;
+                    coilerSensorArr[sampleIndex] = coilerSensor;
+                    DAC_OutArray[sampleIndex] = autoLeveller;
+                    sampleIndex++;
+                }
+
+        HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_12B_R, autoLeveller);
+        len = snprintf(uartMsg, sizeof(uartMsg),
+                       "%d,%d,%.2f,%.2f,%d\r\n",
+                       autoLeveller, coilerSensor,S.avgAutoLeveller, Updated_Draft, BR_MotorRPM);
+
+        HAL_UART_Transmit_IT(&huart3, (uint8_t*)uartMsg, len);
+
+        bufferIdx = 0;
+    }
+}
+
+
+void StoreAutoLevellerValues(void)
+{
+    static uint8_t count = 0;
+    float sum = 0.0f;
+    // Shift values up
+    for (int i = 0; i < MAX - 1; i++) {
+        S.autoLevellerArr[i] = S.autoLevellerArr[i + 1];
+    }
+    S.autoLevellerArr[MAX - 1] = autoLeveller;
+    // increment count only until full
+    if (count < MAX)
+        count++;
+    //  average of the valid values
+    for (int i = MAX - count; i < MAX; i++) {
+        sum += S.autoLevellerArr[i];
+    }
+    S.avgAutoLeveller = sum / count;
+}
+
+
+
+
+void DraftCalculation(void) {
+    if ((float) S.avgAutoLeveller >= (float)Sliver5_Value) {
+        Draft_Change = ((float) S.avgAutoLeveller - (float)Sliver5_Value) /
+                       ((float)Sliver4_Value - (float)Sliver5_Value);
+        Updated_Draft = (float)Ideal_Draft - Draft_Change;
+    } else {
+        Draft_Change = ((float) S.avgAutoLeveller - (float)Sliver5_Value) /
+                       ((float)Sliver5_Value - (float)Sliver6_Value);
+        Updated_Draft = (float)Ideal_Draft - Draft_Change;
+    }
+}
+
+void BrRPMCalculation(void){
+	req_draft_SR_to_FR=Updated_Draft/BR_TO_SR_BREAK_DRAFT;
+	surfaceSpeed_SR=1667/req_draft_SR_to_FR;
+	surfaceSpeed_BR=surfaceSpeed_SR/BR_TO_SR_BREAK_DRAFT;
+	BR_RPM=surfaceSpeed_BR*60.0f/(3.14f * BR_DIA_MM);
+	BR_MotorRPM=BR_RPM*3.07f;
+	if(i<180){
+	BR_MotorRPMArr[i]=BR_MotorRPM;
+	i++;
+}
+}
+
+
 
 void HAL_UART_TxHalfCpltCallback(UART_HandleTypeDef* huart){
 	uart_halfSent += 1;
@@ -123,21 +295,12 @@ void HAL_UART_TxHalfCpltCallback(UART_HandleTypeDef* huart){
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef* huart){
 	uart_secondhalfSent += 1;
 }
-
 /*uint8_t Log_addDataToBuffer(uint16_t bufferLocation,uint16_t data){
 	sprintf(LogBuffer + bufferLocation,"%05d,\r\n",data);
 	return 8;
 }*/
 
-uint8_t Log_DataToBufferReadable(uint16_t bufferLocation,uint16_t data1,uint16_t data2){
-	uint8_t size1 = 0,size2=0;
-	size1 = itoaFast(data1,LogBuffer+bufferLocation,10);
-	LogBuffer[bufferLocation+size1] = 0x2C;
-	size2 = itoaFast(data2,LogBuffer+bufferLocation+size1+1,10);
-	LogBuffer[bufferLocation+size1+size2 + 1] = 0x0A;
-	LogBuffer[bufferLocation+size1+size2 + 2] = 0x0D;
-	return size1+size2 + 3;
-}
+
 
 uint8_t Log_DataToBufferFast(uint16_t bufferLocation,uint16_t data1,uint16_t data2){
 	LogBuffer[bufferLocation] = data1 >> 8;
@@ -192,6 +355,7 @@ int itoaFast(int value, char *sp, int radix)
   */
 int main(void)
 {
+
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
@@ -216,6 +380,7 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_FDCAN1_Init();
+  FDCAN_TxInit();
   MX_TIM17_Init();
   MX_TIM6_Init();
   MX_ADC2_Init();
@@ -230,13 +395,13 @@ int main(void)
   HAL_ADCEx_Calibration_Start(&hadc2,ADC_SINGLE_ENDED);
   HAL_Delay(10);
 
-  HAL_GPIO_WritePin(GPIOC,LED2_Pin,GPIO_PIN_RESET);
-  HAL_GPIO_WritePin(GPIOB,LED4_Pin,GPIO_PIN_RESET);
+ // HAL_GPIO_WritePin(GPIOC,LED2_Pin,GPIO_PIN_RESET);
+  //HAL_GPIO_WritePin(GPIOB,LED4_Pin,GPIO_PIN_RESET);
 
-  HAL_ADC_Start(&hadc2);		// start ADC2 (slave) first!
-  HAL_ADCEx_MultiModeStart_DMA(&hadc1,(uint32_t*)adcBuffer,180);
-  HAL_DAC_Start_DMA(&hdac1,DAC_CHANNEL_1,(uint32_t*)DAC_OutArray,180,DAC_ALIGN_12B_R);
-
+//  HAL_ADC_Start(&hadc2);		// start ADC2 (slave) first!
+//
+//  HAL_DAC_Start_DMA(&hdac1,DAC_CHANNEL_1,(uint32_t*)DAC_OutArray,180,DAC_ALIGN_12B_R);
+  HAL_TIM_Base_Start_IT(&htim6);
   startADC = 1;
   HAL_TIM_Base_Start_IT(&htim7);
   /* USER CODE END 2 */
@@ -245,57 +410,40 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	//HAL_GPIO_TogglePin(GPIOC,LED1_Pin);
-	//HAL_GPIO_TogglePin(GPIOC,LED3_Pin);
-	//HAL_Delay(100);
-
-	if (halfComplete==1){
-		for (int i=0;i<90;i++){
-			autoLevellerArr[i] = (uint16_t)(adcBuffer[i]>>16);
-			coilerSensorArr[i] = (uint16_t)(adcBuffer[i]);
-			DAC_OutArray[i] = 	autoLevellerArr[i];
-			bufferIdx+=Log_DataToBufferReadable(bufferIdx,autoLevellerArr[i],coilerSensorArr[i]);
-
-			//bufferIdx+=Log_DataToBufferFast(bufferIdx,autoLevellerArr[i],coilerSensorArr[i]);
-
-		}
-		HAL_UART_Transmit_IT(&huart3,LogBuffer,bufferIdx);
-		bufferIdx = 0;
-		halfComplete = 0;
-	}
 
 
+	  GPIO_PinState pinState = HAL_GPIO_ReadPin(Toggle_SW_GPIO_Port, Toggle_SW_Pin);
 
-	if (fullComplete==1){
-		for (int i=90;i<180;i++){
-			autoLevellerArr[i] = (uint16_t)(adcBuffer[i]>>16);
-			coilerSensorArr[i] = (uint16_t)(adcBuffer[i]);
-			DAC_OutArray[i] = 	autoLevellerArr[i];
-			bufferIdx+=Log_DataToBufferReadable(bufferIdx,autoLevellerArr[i],coilerSensorArr[i]);
-			//bufferIdx+=Log_DataToBufferFast(bufferIdx,autoLevellerArr[i],coilerSensorArr[i]);
-		}
-		HAL_UART_Transmit_IT(&huart3,LogBuffer,bufferIdx);
-		bufferIdx = 0;
-		fullComplete = 0;
-	}
+	      if (pinState == GPIO_PIN_SET){
+	          toggle_state = 1;
+	          S.Toggle_Switch=1;
+	      }
+	      else{
+	          toggle_state = 0;
+	          S.Toggle_Switch=0;
+	      }
 
-	if (startADC == 1){
-	  HAL_TIM_Base_Start_IT(&htim6);
-	  startADC = 0;
-	}
+	      HAL_Delay(100);
 
-	if (stopADC == 1){
-	  HAL_TIM_Base_Stop_IT(&htim6);
-	  stopADC = 0;
-	}
-	if(dataOut == 1){
-		HAL_UART_Transmit_IT(&huart3,LogBuffer,bufferIdx);
-		dataOut = 0;
-	}
+//
+//	    if (startADC == 1){
+//	      HAL_TIM_Base_Start_IT(&htim6);
+//	      startADC = 0;
+//	    }
+//
+//	    if (stopADC == 1){
+//	      HAL_TIM_Base_Stop_IT(&htim6);
+//	      stopADC = 0;
+//	    }
+//
+//	    if(dataOut == 1){
+//	      HAL_UART_Transmit_IT(&huart3,(uint8_t*)LogBuffer,bufferIdx);
+//	      dataOut = 0;
+//	    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-  }
+	  }
   /* USER CODE END 3 */
 }
 
@@ -374,12 +522,12 @@ static void MX_ADC1_Init(void)
   hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SEQ_CONV;
   hadc1.Init.LowPowerAutoWait = DISABLE;
-  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.ContinuousConvMode = ENABLE;
   hadc1.Init.NbrOfConversion = 1;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
-  hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIG_T6_TRGO;
-  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
-  hadc1.Init.DMAContinuousRequests = ENABLE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.DMAContinuousRequests = DISABLE;
   hadc1.Init.Overrun = ADC_OVR_DATA_PRESERVED;
   hadc1.Init.OversamplingMode = DISABLE;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
@@ -443,7 +591,7 @@ static void MX_ADC2_Init(void)
   hadc2.Init.ScanConvMode = ADC_SCAN_DISABLE;
   hadc2.Init.EOCSelection = ADC_EOC_SEQ_CONV;
   hadc2.Init.LowPowerAutoWait = DISABLE;
-  hadc2.Init.ContinuousConvMode = DISABLE;
+  hadc2.Init.ContinuousConvMode = ENABLE;
   hadc2.Init.NbrOfConversion = 1;
   hadc2.Init.DiscontinuousConvMode = DISABLE;
   hadc2.Init.DMAContinuousRequests = DISABLE;
@@ -794,6 +942,9 @@ static void MX_DMA_Init(void)
 static void MX_GPIO_Init(void)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
+  /* USER CODE BEGIN MX_GPIO_Init_1 */
+
+  /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
@@ -808,7 +959,7 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOA, EXTRA2_Pin|EXTRA3_Pin|EXTRA4_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, EXTRA5_Pin|EXTRA6_Pin|EXTRA7_Pin|LED4_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, EXTRA5_Pin|GPIO_PIN_12|LED4_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pins : LED1_Pin LED2_Pin LED3_Pin */
   GPIO_InitStruct.Pin = LED1_Pin|LED2_Pin|LED3_Pin;
@@ -824,17 +975,43 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : EXTRA5_Pin EXTRA6_Pin EXTRA7_Pin LED4_Pin */
-  GPIO_InitStruct.Pin = EXTRA5_Pin|EXTRA6_Pin|EXTRA7_Pin|LED4_Pin;
+  /*Configure GPIO pins : EXTRA5_Pin PB12 LED4_Pin */
+  GPIO_InitStruct.Pin = EXTRA5_Pin|GPIO_PIN_12|LED4_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : PB1 */
+  GPIO_InitStruct.Pin = GPIO_PIN_1;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : Toggle_SW_Pin */
+  GPIO_InitStruct.Pin = Toggle_SW_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(Toggle_SW_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PA10 */
+  GPIO_InitStruct.Pin = GPIO_PIN_10;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI1_IRQn, 2, 0);
+  HAL_NVIC_EnableIRQ(EXTI1_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 2, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+
+  /* USER CODE BEGIN MX_GPIO_Init_2 */
+
+  /* USER CODE END MX_GPIO_Init_2 */
 }
-
 /* USER CODE BEGIN 4 */
-
 /* USER CODE END 4 */
 
 /**

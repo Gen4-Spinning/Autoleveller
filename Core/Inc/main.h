@@ -75,10 +75,8 @@ void Error_Handler(void);
 #define EXTRA4_GPIO_Port GPIOA
 #define EXTRA5_Pin GPIO_PIN_0
 #define EXTRA5_GPIO_Port GPIOB
-#define EXTRA6_Pin GPIO_PIN_1
-#define EXTRA6_GPIO_Port GPIOB
-#define EXTRA7_Pin GPIO_PIN_2
-#define EXTRA7_GPIO_Port GPIOB
+#define Toggle_SW_Pin GPIO_PIN_2
+#define Toggle_SW_GPIO_Port GPIOB
 #define LED4_Pin GPIO_PIN_9
 #define LED4_GPIO_Port GPIOB
 
