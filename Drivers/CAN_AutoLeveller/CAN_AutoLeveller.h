@@ -23,7 +23,7 @@ typedef struct Sensor_Struct
     float Updated_Draft;
     uint16_t BR_MotorRPM;
     uint16_t autoLevellerArr[MAX];
-    float avgAutoLeveller;
+    float avgScanningSensor;
     uint8_t Toggle_Switch;
 
 }SensorTypeDef;

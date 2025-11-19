@@ -45,16 +45,9 @@ ADC_HandleTypeDef hadc1;
 ADC_HandleTypeDef hadc2;
 DMA_HandleTypeDef hdma_adc1;
 
-DAC_HandleTypeDef hdac1;
-DMA_HandleTypeDef hdma_dac1_ch1;
-
 FDCAN_HandleTypeDef hfdcan1;
 
 I2C_HandleTypeDef hi2c1;
-
-TIM_HandleTypeDef htim6;
-TIM_HandleTypeDef htim7;
-TIM_HandleTypeDef htim17;
 
 UART_HandleTypeDef huart3;
 
@@ -68,14 +61,10 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_FDCAN1_Init(void);
-static void MX_TIM17_Init(void);
-static void MX_TIM6_Init(void);
 static void MX_ADC2_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_USART3_UART_Init(void);
-static void MX_TIM7_Init(void);
-static void MX_DAC1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -83,76 +72,17 @@ static void MX_DAC1_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 uint32_t adcBuffer[180]; // 32 bit buffer, 180 readings totally. hald conv callback at 90
-uint8_t halfComplete = 0;
-uint8_t fullComplete = 0;
-uint8_t startADC = 0;
-uint8_t stopADC = 0;
-uint8_t uart_halfSent = 0;
-uint8_t uart_secondhalfSent = 0;
-uint8_t dataOut = 0;
 
 uint32_t dualValue =0;
 uint16_t autoLeveller=0;
 uint16_t coilerSensor=0;
 uint8_t adcRunning = 0;
 
-uint16_t autoLevellerArr[180];
-uint16_t coilerSensorArr[180];
-uint32_t DAC_OutArray[180];
-uint16_t BR_MotorRPMArr[180];
-
-char LogBuffer[1000];
-uint16_t bufferIdx;
-uint16_t sampleIndex = 0;
-
 char uartMsg[128];
 int len;
 
-
-//Draft Calculation
-float Draft_Change=0;
-float Updated_Draft=0;
-#define Sliver6_Value 707
-#define Sliver5_Value 860
-#define Sliver4_Value 1052
-#define Ideal_Draft 5
-
-//RPM Calculation
-float req_draft_SR_to_FR=0;
-float surfaceSpeed_SR=0;
-float surfaceSpeed_BR=0;
-float BR_RPM=0;
-uint16_t BR_MotorRPM=0;
-#define BR_TO_SR_BREAK_DRAFT 1.5f
-#define BR_DIA_MM 30
-uint8_t i=0;
-
 volatile GPIO_PinState pinState;
 volatile uint8_t toggle_state = 0;
-
-
-
-
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-{
-	/*if (htim->Instance==TIM7){ //500 ms interrupt
-		HAL_GPIO_TogglePin(GPIOC,LED1_Pin);
-		HAL_GPIO_TogglePin(GPIOC,LED3_Pin);
-	}*/
-	if (htim->Instance==TIM6){
-		//HAL_GPIO_TogglePin(GPIOC,LED3_Pin);
-
-	}
-}
-uint8_t Log_DataToBufferReadable(uint16_t bufferLocation,uint16_t data1,uint16_t data2){
-	uint8_t size1 = 0,size2=0,size3=0;
-	size1 = itoaFast(data1,LogBuffer+bufferLocation,10);
-	LogBuffer[bufferLocation+size1] = 0x2C;
-	size2 = itoaFast(data2,LogBuffer+bufferLocation+size1+1,10);
-	LogBuffer[bufferLocation+size1+size2 + 1] = 0x0A;
-	LogBuffer[bufferLocation+size1+size2 + 2] = 0x0D;
-	return size1+size2 + 3;
-}
 
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
@@ -172,10 +102,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
             HAL_ADC_Start(&hadc2);
             HAL_ADCEx_MultiModeStart_DMA(&hadc1, (uint32_t*)adcBuffer, 180);
 
-
-            HAL_DAC_Start_DMA(&hdac1, DAC_CHANNEL_1,
-                              (uint32_t*)DAC_OutArray,
-                              180, DAC_ALIGN_12B_R);
         }
         else if (state == GPIO_PIN_RESET && adcRunning == 1)
         {
@@ -184,15 +110,10 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 
             HAL_ADCEx_MultiModeStop_DMA(&hadc1);
             HAL_ADC_Stop(&hadc2);
-            HAL_DAC_Stop_DMA(&hdac1, DAC_CHANNEL_1);
-
             HAL_GPIO_WritePin(GPIOC, LED2_Pin, GPIO_PIN_SET);
         }
     }
 }
-
-
-
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
@@ -205,148 +126,15 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
         coilerSensor= (uint16_t)(dualValue);
         S.coilerSensor =coilerSensor;
 	    S.scanningSensor= autoLeveller;
-	    StoreAutoLevellerValues();
-        DraftCalculation();
-        BrRPMCalculation();
-	    S.Updated_Draft=Updated_Draft;
-	    S.BR_MotorRPM=BR_MotorRPM;
-//	    GPIO_PinState pinState = HAL_GPIO_ReadPin(GPIOB, EXTRA7_Pin);
-//	    if (pinState == GPIO_PIN_SET){
-//	    	S.Toggle_Switch=1;
-//	    }
-//	    else{
-//	    	S.Toggle_Switch=0;
-//	    }
-        FDCAN_SendSensorvalues_ToAL();
-
-
-
-        if (sampleIndex < 180) {
-                    autoLevellerArr[sampleIndex] = autoLeveller;
-                    coilerSensorArr[sampleIndex] = coilerSensor;
-                    DAC_OutArray[sampleIndex] = autoLeveller;
-                    sampleIndex++;
-                }
-
-        HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_12B_R, autoLeveller);
+	    FDCAN_SendSensorvalues_ToMotor();
         len = snprintf(uartMsg, sizeof(uartMsg),
-                       "%d,%d,%.2f,%.2f,%d\r\n",
-                       autoLeveller, coilerSensor,S.avgAutoLeveller, Updated_Draft, BR_MotorRPM);
+                       "%d,%d\r\n",
+                       autoLeveller, coilerSensor);
 
         HAL_UART_Transmit_IT(&huart3, (uint8_t*)uartMsg, len);
 
-        bufferIdx = 0;
     }
 }
-
-
-void StoreAutoLevellerValues(void)
-{
-    static uint8_t count = 0;
-    float sum = 0.0f;
-    // Shift values up
-    for (int i = 0; i < MAX - 1; i++) {
-        S.autoLevellerArr[i] = S.autoLevellerArr[i + 1];
-    }
-    S.autoLevellerArr[MAX - 1] = autoLeveller;
-    // increment count only until full
-    if (count < MAX)
-        count++;
-    //  average of the valid values
-    for (int i = MAX - count; i < MAX; i++) {
-        sum += S.autoLevellerArr[i];
-    }
-    S.avgAutoLeveller = sum / count;
-}
-
-
-
-
-void DraftCalculation(void) {
-    if ((float) S.avgAutoLeveller >= (float)Sliver5_Value) {
-        Draft_Change = ((float) S.avgAutoLeveller - (float)Sliver5_Value) /
-                       ((float)Sliver4_Value - (float)Sliver5_Value);
-        Updated_Draft = (float)Ideal_Draft - Draft_Change;
-    } else {
-        Draft_Change = ((float) S.avgAutoLeveller - (float)Sliver5_Value) /
-                       ((float)Sliver5_Value - (float)Sliver6_Value);
-        Updated_Draft = (float)Ideal_Draft - Draft_Change;
-    }
-}
-
-void BrRPMCalculation(void){
-	req_draft_SR_to_FR=Updated_Draft/BR_TO_SR_BREAK_DRAFT;
-	surfaceSpeed_SR=1667/req_draft_SR_to_FR;
-	surfaceSpeed_BR=surfaceSpeed_SR/BR_TO_SR_BREAK_DRAFT;
-	BR_RPM=surfaceSpeed_BR*60.0f/(3.14f * BR_DIA_MM);
-	BR_MotorRPM=BR_RPM*3.07f;
-	if(i<180){
-	BR_MotorRPMArr[i]=BR_MotorRPM;
-	i++;
-}
-}
-
-
-
-void HAL_UART_TxHalfCpltCallback(UART_HandleTypeDef* huart){
-	uart_halfSent += 1;
-}
-
-void HAL_UART_TxCpltCallback(UART_HandleTypeDef* huart){
-	uart_secondhalfSent += 1;
-}
-/*uint8_t Log_addDataToBuffer(uint16_t bufferLocation,uint16_t data){
-	sprintf(LogBuffer + bufferLocation,"%05d,\r\n",data);
-	return 8;
-}*/
-
-
-
-uint8_t Log_DataToBufferFast(uint16_t bufferLocation,uint16_t data1,uint16_t data2){
-	LogBuffer[bufferLocation] = data1 >> 8;
-	LogBuffer[bufferLocation+1] = data1 & 0xFF;
-	LogBuffer[bufferLocation+2] = data2 >> 8;
-	LogBuffer[bufferLocation+3] = data2 & 0xFF;
-	LogBuffer[bufferLocation+4] = 0x0A;
-	LogBuffer[bufferLocation+5] = 0x0D;
-	return 6;
-}
-
-
-uint8_t Log_CLDataToBuffer(uint16_t bufferLocation,uint16_t data){
-	LogBuffer[bufferLocation] = data >> 8 & 0xFF;
-	LogBuffer[bufferLocation+1] = data & 0xFF;
-	LogBuffer[bufferLocation+2] = 0xFE;
-	return 3;
-}
-
-int itoaFast(int value, char *sp, int radix)
-{
-    char tmp[16];// be careful with the length of the buffer
-    char *tp = tmp;
-    int i;
-    unsigned v;
-
-	v = (unsigned)value;
-
-    while (v || tp == tmp)
-    {
-        i = v % radix;
-        v /= radix;
-        if (i < 10)
-          *tp++ = i+'0';
-        else
-          *tp++ = i + 'a' - 10;
-    }
-
-    int len = tp - tmp;
-
-    while (tp > tmp)
-        *sp++ = *--tp;
-
-    return len;
-}
-
 /* USER CODE END 0 */
 
 /**
@@ -380,37 +168,22 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_FDCAN1_Init();
-  FDCAN_TxInit();
-  MX_TIM17_Init();
-  MX_TIM6_Init();
   MX_ADC2_Init();
   MX_ADC1_Init();
   MX_I2C1_Init();
   MX_USART3_UART_Init();
-  MX_TIM7_Init();
-  MX_DAC1_Init();
   /* USER CODE BEGIN 2 */
   HAL_ADCEx_Calibration_Start(&hadc1,ADC_SINGLE_ENDED);
   HAL_Delay(10);
   HAL_ADCEx_Calibration_Start(&hadc2,ADC_SINGLE_ENDED);
   HAL_Delay(10);
 
- // HAL_GPIO_WritePin(GPIOC,LED2_Pin,GPIO_PIN_RESET);
-  //HAL_GPIO_WritePin(GPIOB,LED4_Pin,GPIO_PIN_RESET);
-
-//  HAL_ADC_Start(&hadc2);		// start ADC2 (slave) first!
-//
-//  HAL_DAC_Start_DMA(&hdac1,DAC_CHANNEL_1,(uint32_t*)DAC_OutArray,180,DAC_ALIGN_12B_R);
-  HAL_TIM_Base_Start_IT(&htim6);
-  startADC = 1;
-  HAL_TIM_Base_Start_IT(&htim7);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-
 
 	  GPIO_PinState pinState = HAL_GPIO_ReadPin(Toggle_SW_GPIO_Port, Toggle_SW_Pin);
 
@@ -424,22 +197,6 @@ int main(void)
 	      }
 
 	      HAL_Delay(100);
-
-//
-//	    if (startADC == 1){
-//	      HAL_TIM_Base_Start_IT(&htim6);
-//	      startADC = 0;
-//	    }
-//
-//	    if (stopADC == 1){
-//	      HAL_TIM_Base_Stop_IT(&htim6);
-//	      stopADC = 0;
-//	    }
-//
-//	    if(dataOut == 1){
-//	      HAL_UART_Transmit_IT(&huart3,(uint8_t*)LogBuffer,bufferIdx);
-//	      dataOut = 0;
-//	    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -522,7 +279,7 @@ static void MX_ADC1_Init(void)
   hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SEQ_CONV;
   hadc1.Init.LowPowerAutoWait = DISABLE;
-  hadc1.Init.ContinuousConvMode = ENABLE;
+  hadc1.Init.ContinuousConvMode = DISABLE;
   hadc1.Init.NbrOfConversion = 1;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
@@ -591,7 +348,7 @@ static void MX_ADC2_Init(void)
   hadc2.Init.ScanConvMode = ADC_SCAN_DISABLE;
   hadc2.Init.EOCSelection = ADC_EOC_SEQ_CONV;
   hadc2.Init.LowPowerAutoWait = DISABLE;
-  hadc2.Init.ContinuousConvMode = ENABLE;
+  hadc2.Init.ContinuousConvMode = DISABLE;
   hadc2.Init.NbrOfConversion = 1;
   hadc2.Init.DiscontinuousConvMode = DISABLE;
   hadc2.Init.DMAContinuousRequests = DISABLE;
@@ -617,53 +374,6 @@ static void MX_ADC2_Init(void)
   /* USER CODE BEGIN ADC2_Init 2 */
 
   /* USER CODE END ADC2_Init 2 */
-
-}
-
-/**
-  * @brief DAC1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_DAC1_Init(void)
-{
-
-  /* USER CODE BEGIN DAC1_Init 0 */
-
-  /* USER CODE END DAC1_Init 0 */
-
-  DAC_ChannelConfTypeDef sConfig = {0};
-
-  /* USER CODE BEGIN DAC1_Init 1 */
-
-  /* USER CODE END DAC1_Init 1 */
-
-  /** DAC Initialization
-  */
-  hdac1.Instance = DAC1;
-  if (HAL_DAC_Init(&hdac1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** DAC channel OUT1 config
-  */
-  sConfig.DAC_HighFrequency = DAC_HIGH_FREQUENCY_INTERFACE_MODE_ABOVE_80MHZ;
-  sConfig.DAC_DMADoubleDataMode = DISABLE;
-  sConfig.DAC_SignedFormat = DISABLE;
-  sConfig.DAC_SampleAndHold = DAC_SAMPLEANDHOLD_DISABLE;
-  sConfig.DAC_Trigger = DAC_TRIGGER_T6_TRGO;
-  sConfig.DAC_Trigger2 = DAC_TRIGGER_NONE;
-  sConfig.DAC_OutputBuffer = DAC_OUTPUTBUFFER_ENABLE;
-  sConfig.DAC_ConnectOnChipPeripheral = DAC_CHIPCONNECT_EXTERNAL;
-  sConfig.DAC_UserTrimming = DAC_TRIMMING_FACTORY;
-  if (HAL_DAC_ConfigChannel(&hdac1, &sConfig, DAC_CHANNEL_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN DAC1_Init 2 */
-
-  /* USER CODE END DAC1_Init 2 */
 
 }
 
@@ -759,114 +469,6 @@ static void MX_I2C1_Init(void)
 }
 
 /**
-  * @brief TIM6 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM6_Init(void)
-{
-
-  /* USER CODE BEGIN TIM6_Init 0 */
-
-  /* USER CODE END TIM6_Init 0 */
-
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-
-  /* USER CODE BEGIN TIM6_Init 1 */
-
-  /* USER CODE END TIM6_Init 1 */
-  htim6.Instance = TIM6;
-  htim6.Init.Prescaler = 149;
-  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 3759;
-  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM6_Init 2 */
-
-  /* USER CODE END TIM6_Init 2 */
-
-}
-
-/**
-  * @brief TIM7 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM7_Init(void)
-{
-
-  /* USER CODE BEGIN TIM7_Init 0 */
-
-  /* USER CODE END TIM7_Init 0 */
-
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-
-  /* USER CODE BEGIN TIM7_Init 1 */
-
-  /* USER CODE END TIM7_Init 1 */
-  htim7.Instance = TIM7;
-  htim7.Init.Prescaler = 14999;
-  htim7.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim7.Init.Period = 4999;
-  htim7.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim7) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim7, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM7_Init 2 */
-
-  /* USER CODE END TIM7_Init 2 */
-
-}
-
-/**
-  * @brief TIM17 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM17_Init(void)
-{
-
-  /* USER CODE BEGIN TIM17_Init 0 */
-
-  /* USER CODE END TIM17_Init 0 */
-
-  /* USER CODE BEGIN TIM17_Init 1 */
-
-  /* USER CODE END TIM17_Init 1 */
-  htim17.Instance = TIM17;
-  htim17.Init.Prescaler = 1499;
-  htim17.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim17.Init.Period = 1499;
-  htim17.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim17.Init.RepetitionCounter = 0;
-  htim17.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
-  if (HAL_TIM_Base_Init(&htim17) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM17_Init 2 */
-
-  /* USER CODE END TIM17_Init 2 */
-
-}
-
-/**
   * @brief USART3 Initialization Function
   * @param None
   * @retval None
@@ -928,9 +530,6 @@ static void MX_DMA_Init(void)
   /* DMA1_Channel1_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
-  /* DMA1_Channel3_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel3_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Channel3_IRQn);
 
 }
 
@@ -1011,6 +610,7 @@ static void MX_GPIO_Init(void)
 
   /* USER CODE END MX_GPIO_Init_2 */
 }
+
 /* USER CODE BEGIN 4 */
 /* USER CODE END 4 */
 
@@ -1028,8 +628,7 @@ void Error_Handler(void)
   }
   /* USER CODE END Error_Handler_Debug */
 }
-
-#ifdef  USE_FULL_ASSERT
+#ifdef USE_FULL_ASSERT
 /**
   * @brief  Reports the name of the source file and the source line number
   *         where the assert_param error has occurred.
