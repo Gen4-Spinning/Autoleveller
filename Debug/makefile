@@ -1,6 +1,6 @@
 ################################################################################
 # Automatically-generated file. Do not edit!
-# Toolchain: GNU Tools for STM32 (10.3-2021.10)
+# Toolchain: GNU Tools for STM32 (13.3.rel1)
 ################################################################################
 
 -include ../makefile.init
@@ -34,34 +34,34 @@ $(wildcard ../makefile.init) \
 $(wildcard ../makefile.targets) \
 
 
-BUILD_ARTIFACT_NAME := Autoleveller
+BUILD_ARTIFACT_NAME := Autoleveller_WorkingCode
 BUILD_ARTIFACT_EXTENSION := elf
 BUILD_ARTIFACT_PREFIX :=
 BUILD_ARTIFACT := $(BUILD_ARTIFACT_PREFIX)$(BUILD_ARTIFACT_NAME)$(if $(BUILD_ARTIFACT_EXTENSION),.$(BUILD_ARTIFACT_EXTENSION),)
 
 # Add inputs and outputs from these tool invocations to the build variables 
 EXECUTABLES += \
-Autoleveller.elf \
+Autoleveller_WorkingCode.elf \
 
 MAP_FILES += \
-Autoleveller.map \
+Autoleveller_WorkingCode.map \
 
 SIZE_OUTPUT += \
 default.size.stdout \
 
 OBJDUMP_LIST += \
-Autoleveller.list \
+Autoleveller_WorkingCode.list \
 
 
 # All Target
 all: main-build
 
 # Main-build Target
-main-build: Autoleveller.elf secondary-outputs
+main-build: Autoleveller_WorkingCode.elf secondary-outputs
 
 # Tool invocations
-Autoleveller.elf Autoleveller.map: $(OBJS) $(USER_OBJS) /home/harsha/STM32CubeIDE/workspace_1.11.0/Autoleveller/STM32G431CBTX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "Autoleveller.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"/home/harsha/STM32CubeIDE/workspace_1.11.0/Autoleveller/STM32G431CBTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Autoleveller.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Autoleveller_WorkingCode.elf Autoleveller_WorkingCode.map: $(OBJS) $(USER_OBJS) C:\Users\Jeeva\STM32CubeIDE\workspace_1.18.1\Autoleveller_WorkingCode\STM32G431CBTX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "Autoleveller_WorkingCode.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\Jeeva\STM32CubeIDE\workspace_1.18.1\Autoleveller_WorkingCode\STM32G431CBTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Autoleveller_WorkingCode.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
@@ -70,14 +70,14 @@ default.size.stdout: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
 	@echo 'Finished building: $@'
 	@echo ' '
 
-Autoleveller.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-objdump -h -S $(EXECUTABLES) > "Autoleveller.list"
+Autoleveller_WorkingCode.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-objdump -h -S $(EXECUTABLES) > "Autoleveller_WorkingCode.list"
 	@echo 'Finished building: $@'
 	@echo ' '
 
 # Other Targets
 clean:
-	-$(RM) Autoleveller.elf Autoleveller.list Autoleveller.map default.size.stdout
+	-$(RM) Autoleveller_WorkingCode.elf Autoleveller_WorkingCode.list Autoleveller_WorkingCode.map default.size.stdout
 	-@echo ' '
 
 secondary-outputs: $(SIZE_OUTPUT) $(OBJDUMP_LIST)
