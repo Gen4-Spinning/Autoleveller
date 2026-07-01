@@ -35,34 +35,34 @@ $(wildcard ../makefile.init) \
 $(wildcard ../makefile.targets) \
 
 
-BUILD_ARTIFACT_NAME := Autoleveller_Cleaned_Code
+BUILD_ARTIFACT_NAME := Autoleveller
 BUILD_ARTIFACT_EXTENSION := elf
 BUILD_ARTIFACT_PREFIX :=
 BUILD_ARTIFACT := $(BUILD_ARTIFACT_PREFIX)$(BUILD_ARTIFACT_NAME)$(if $(BUILD_ARTIFACT_EXTENSION),.$(BUILD_ARTIFACT_EXTENSION),)
 
 # Add inputs and outputs from these tool invocations to the build variables 
 EXECUTABLES += \
-Autoleveller_Cleaned_Code.elf \
+Autoleveller.elf \
 
 MAP_FILES += \
-Autoleveller_Cleaned_Code.map \
+Autoleveller.map \
 
 SIZE_OUTPUT += \
 default.size.stdout \
 
 OBJDUMP_LIST += \
-Autoleveller_Cleaned_Code.list \
+Autoleveller.list \
 
 
 # All Target
 all: main-build
 
 # Main-build Target
-main-build: Autoleveller_Cleaned_Code.elf secondary-outputs
+main-build: Autoleveller.elf secondary-outputs
 
 # Tool invocations
-Autoleveller_Cleaned_Code.elf Autoleveller_Cleaned_Code.map: $(OBJS) $(USER_OBJS) C:\Users\Jeeva\STM32CubeIDE\workspace_1.18.1\Autoleveller_Cleaned_Code\STM32G431CBTX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "Autoleveller_Cleaned_Code.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\Jeeva\STM32CubeIDE\workspace_1.18.1\Autoleveller_Cleaned_Code\STM32G431CBTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Autoleveller_Cleaned_Code.map" -Wl,--gc-sections -static -u _printf_float --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Autoleveller.elf Autoleveller.map: $(OBJS) $(USER_OBJS) C:\Users\Jeeva\Desktop\Gen4\STM_Codes\AutoLeveller_Jeeva\Autoleveller\Autoleveller\STM32G431CBTX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "Autoleveller.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\Jeeva\Desktop\Gen4\STM_Codes\AutoLeveller_Jeeva\Autoleveller\Autoleveller\STM32G431CBTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Autoleveller.map" -Wl,--gc-sections -static -u _printf_float --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
@@ -71,14 +71,14 @@ default.size.stdout: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
 	@echo 'Finished building: $@'
 	@echo ' '
 
-Autoleveller_Cleaned_Code.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-objdump -h -S $(EXECUTABLES) > "Autoleveller_Cleaned_Code.list"
+Autoleveller.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-objdump -h -S $(EXECUTABLES) > "Autoleveller.list"
 	@echo 'Finished building: $@'
 	@echo ' '
 
 # Other Targets
 clean:
-	-$(RM) Autoleveller_Cleaned_Code.elf Autoleveller_Cleaned_Code.list Autoleveller_Cleaned_Code.map default.size.stdout
+	-$(RM) Autoleveller.elf Autoleveller.list Autoleveller.map default.size.stdout
 	-@echo ' '
 
 secondary-outputs: $(SIZE_OUTPUT) $(OBJDUMP_LIST)

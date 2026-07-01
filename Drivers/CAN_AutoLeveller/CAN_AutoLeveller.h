@@ -13,18 +13,14 @@
 #include "stdio.h"
 #include "FDCAN.h"
 
-#define MAX 3
 
 typedef struct Sensor_Struct
 {
 	uint16_t scanningSensor;
 	uint16_t coilerSensor;
     uint8_t sendCounter;
-    float Updated_Draft;
-    uint16_t BR_MotorRPM;
-    uint16_t autoLevellerArr[MAX];
-    float avgScanningSensor;
-    uint8_t Toggle_Switch;
+
+
 
 }SensorTypeDef;
 

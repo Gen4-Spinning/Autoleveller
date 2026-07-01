@@ -12,7 +12,7 @@
 
 //CAN variables here
 uint32_t functionID,source_address, destination_address,data_size;
-uint8_t TxData[16];
+uint8_t TxData[5];
 
 FDCAN_TxHeaderTypeDef   TxHeader;
 FDCAN_RxHeaderTypeDef   RxHeader;

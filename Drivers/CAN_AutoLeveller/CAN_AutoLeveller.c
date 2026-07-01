@@ -14,7 +14,7 @@ void FDCAN_SendSensorvalues_ToMotor(void){
 	TxHeader.Identifier = (0xA1E03<<8)|0x0A;//0A1E030A
     TxHeader.IdType = FDCAN_EXTENDED_ID;
     TxHeader.TxFrameType = FDCAN_DATA_FRAME;
-    TxHeader.DataLength = FDCAN_DLC_BYTES_12;
+    TxHeader.DataLength = FDCAN_DLC_BYTES_5;
     TxHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
     TxHeader.BitRateSwitch = FDCAN_BRS_ON;
     TxHeader.FDFormat = FDCAN_FD_CAN;
@@ -25,12 +25,6 @@ void FDCAN_SendSensorvalues_ToMotor(void){
     	TxData[2]=(S.scanningSensor);
     	TxData[3]=(S.coilerSensor>>8);
     	TxData[4]=(S.coilerSensor);
-//    	TxData[5]=(((uint16_t)(S.Updated_Draft*100))>>8);
-//    	TxData[6]=(uint16_t)(S.Updated_Draft*100);
-//    	TxData[7]=(S.BR_MotorRPM)>>8;
-//    	TxData[8]=(S.BR_MotorRPM);
-    	TxData[9]=(S.Toggle_Switch);
-
     	if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan1)>1){
     		HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader, TxData);
     	}

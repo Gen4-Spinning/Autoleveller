@@ -53,7 +53,7 @@ extern FDCAN_HandleTypeDef hfdcan1;
 extern FDCAN_RxHeaderTypeDef   RxHeader;
 extern FDCAN_TxHeaderTypeDef   TxHeader;
 
-extern uint8_t TxData[16];
+extern uint8_t TxData[5];
 extern uint8_t RxData[32];
 extern uint32_t functionID;
 extern uint32_t source_address;
