@@ -174,6 +174,7 @@ int main(void)
   MX_I2C1_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
+  FDCAN_TxInit();
   HAL_ADCEx_Calibration_Start(&hadc1,ADC_SINGLE_ENDED);
   HAL_Delay(10);
   HAL_ADCEx_Calibration_Start(&hadc2,ADC_SINGLE_ENDED);
